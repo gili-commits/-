@@ -1,22 +1,20 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { Pool } = require('pg');
 
-const DB_PATH = path.join(__dirname, 'rental.db');
-
-const db = new sqlite3.Database(DB_PATH, (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to SQLite database');
-    initializeDatabase();
-  }
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
-function initializeDatabase() {
-  db.serialize(() => {
-    db.run(`
+function convertPlaceholders(sql) {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+}
+
+async function initializeDatabase() {
+  try {
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS contracts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         tenant_name TEXT,
         property TEXT,
         start_date TEXT,
@@ -25,50 +23,76 @@ function initializeDatabase() {
         currency TEXT DEFAULT 'ILS',
         pdf_path TEXT,
         raw_text TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
+        created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-
-    db.run(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS payments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         contract_id INTEGER,
         due_date TEXT,
         amount REAL,
         paid INTEGER DEFAULT 0,
         paid_date TEXT,
-        notes TEXT,
-        FOREIGN KEY (contract_id) REFERENCES contracts(id)
+        notes TEXT
       )
     `);
-
-    db.run(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS properties (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT UNIQUE,
         address TEXT,
         type TEXT
       )
     `);
-
-    db.run(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         contract_id INTEGER,
         event_date TEXT,
         type TEXT,
         description TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        FOREIGN KEY (contract_id) REFERENCES contracts(id)
+        created_at TIMESTAMPTZ DEFAULT NOW()
       )
-    `, (err) => {
-      if (err) {
-        console.error('Error creating tables:', err.message);
-      } else {
-        console.log('Database tables initialized successfully');
-      }
-    });
-  });
+    `);
+    console.log('Database tables initialized successfully');
+  } catch (err) {
+    console.error('Error initializing database:', err.message);
+  }
 }
+
+const db = {
+  all: (sql, params, callback) => {
+    const pgSql = convertPlaceholders(sql);
+    pool.query(pgSql, params)
+      .then(result => callback(null, result.rows))
+      .catch(err => callback(err));
+  },
+  get: (sql, params, callback) => {
+    const pgSql = convertPlaceholders(sql);
+    pool.query(pgSql, params)
+      .then(result => callback(null, result.rows[0] || null))
+      .catch(err => callback(err));
+  },
+  run: (sql, params, callback) => {
+    let pgSql = convertPlaceholders(sql);
+    pgSql = pgSql.replace(/INSERT OR IGNORE/i, 'INSERT');
+    if (pgSql.trim().toUpperCase().startsWith('INSERT')) {
+      pgSql += ' ON CONFLICT DO NOTHING RETURNING id';
+    }
+    pool.query(pgSql, params)
+      .then(result => {
+        if (callback) {
+          callback.call({ lastID: result.rows[0]?.id || null, changes: result.rowCount }, null);
+        }
+      })
+      .catch(err => {
+        if (callback) callback.call({}, err);
+      });
+  },
+  close: () => pool.end()
+};
+
+initializeDatabase();
 
 module.exports = db;
