@@ -7,7 +7,7 @@ const pdfParse = require('pdf-parse');
 const db = require('./database');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -398,7 +398,7 @@ app.delete('/api/events/:id', (req, res) => {
 const server = app.listen(PORT, () => {
   const url = `http://localhost:${PORT}`;
   console.log(`\n🏢 Rental Management App running at ${url}\n`);
-  require('child_process').exec(`start ${url}`);
+  
 });
 
 function shutdown() {
