@@ -1109,7 +1109,7 @@ function toggleDetailAddEvent() {
   }
 }
 function startDetailEditEvent(id) {
-  const e = detailEvents.find(ev => ev.id === id);
+  const e = detailEvents.find(ev => ev.id == id);
   if (!e) return;
   detailEditingEventId = id;
   document.getElementById("def-date").value = e.event_date;
