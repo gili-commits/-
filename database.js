@@ -55,6 +55,17 @@ async function initializeDatabase() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS property_number TEXT`);
+    await pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS size_sqm REAL`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS property_images (
+        id SERIAL PRIMARY KEY,
+        property_name TEXT,
+        category TEXT,
+        image_url TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
     console.log('Database tables initialized successfully');
   } catch (err) {
     console.error('Error initializing database:', err.message);

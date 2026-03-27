@@ -356,6 +356,67 @@
       flex-wrap: wrap;
       margin-bottom: 22px;
     }
+
+    /* Image gallery */
+    .img-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 8px;
+    }
+    .img-category-card {
+      background: white;
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .img-category-card h4 {
+      font-size: 0.88rem;
+      color: #555;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .img-thumbs { display: flex; flex-direction: column; gap: 8px; }
+    .img-thumb-wrap {
+      position: relative;
+    }
+    .img-thumb-wrap img {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      border-radius: 8px;
+      display: block;
+      cursor: pointer;
+    }
+    .img-del-btn {
+      position: absolute;
+      top: 5px;
+      left: 5px;
+      background: rgba(0,0,0,0.55);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      line-height: 26px;
+      text-align: center;
+      padding: 0;
+    }
+    .img-upload-label {
+      display: block;
+      padding: 10px;
+      border: 2px dashed #ddd;
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: #999;
+      transition: all 0.2s;
+      margin-top: 6px;
+    }
+    .img-upload-label:hover { border-color: #e94560; color: #e94560; }
   </style>
 </head>
 <body>
@@ -396,6 +457,8 @@
           <tr>
             <th>שוכר</th>
             <th>נכס</th>
+            <th>מס' נכס</th>
+            <th>מ"ר</th>
             <th>תחילה</th>
             <th>סיום</th>
             <th>שכר חודשי</th>
@@ -404,7 +467,7 @@
           </tr>
         </thead>
         <tbody id="contracts-table-body">
-          <tr><td colspan="7" class="empty">טוען...</td></tr>
+          <tr><td colspan="9" class="empty">טוען...</td></tr>
         </tbody>
       </table>
     </div>
@@ -422,6 +485,8 @@
           <tr>
             <th>שוכר</th>
             <th>נכס</th>
+            <th>מס' נכס</th>
+            <th>מ"ר</th>
             <th>תחילה</th>
             <th>סיום</th>
             <th>שכר חודשי</th>
@@ -430,7 +495,7 @@
           </tr>
         </thead>
         <tbody id="contracts-list-body">
-          <tr><td colspan="7" class="empty">טוען...</td></tr>
+          <tr><td colspan="9" class="empty">טוען...</td></tr>
         </tbody>
       </table>
     </div>
@@ -456,6 +521,7 @@
     <div class="sub-tabs">
       <button class="sub-tab active" onclick="showDetailTab('payments')">💰 תשלומים</button>
       <button class="sub-tab" onclick="showDetailTab('events')">📋 יומן אירועים</button>
+      <button class="sub-tab" onclick="showDetailTab('images')">📷 תמונות נכס</button>
     </div>
 
     <!-- DETAIL PAYMENTS -->
@@ -517,6 +583,11 @@
       </div>
 
       <div id="detail-events-list"></div>
+    </div>
+
+    <!-- DETAIL IMAGES -->
+    <div id="detail-sub-images" class="sub-page">
+      <div id="property-images-gallery"><div class="empty" style="padding:40px;text-align:center;color:#aaa"><div style="font-size:2.5rem">📷</div><div>טוען תמונות...</div></div></div>
     </div>
   </div>
 
@@ -680,6 +751,16 @@
       </div>
       <div class="form-row">
         <div class="form-group">
+          <label>מספר נכס</label>
+          <input type="text" id="f-propnum" placeholder="לדוגמה: 4א">
+        </div>
+        <div class="form-group">
+          <label>גודל נכס (מ"ר)</label>
+          <input type="number" id="f-sqm" placeholder="לדוגמה: 75">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
           <label>שכר חודשי (₪)</label>
           <input type="number" id="f-rent" placeholder="5000">
         </div>
@@ -762,6 +843,8 @@ function contractRow(c, forDashboard = false) {
   return `<tr class="${rowClass(c.end_date)}" style="cursor:pointer" onclick="showContractDetail(${c.id}, event)">
     <td>${c.tenant_name || '—'}</td>
     <td>${c.property || '—'}</td>
+    <td>${c.property_number || '—'}</td>
+    <td>${c.size_sqm ? c.size_sqm + ' מ"ר' : '—'}</td>
     <td>${fmtDate(c.start_date)}</td>
     <td>${fmtDate(c.end_date)}</td>
     <td>${c.monthly_rent ? '₪' + fmt(c.monthly_rent) : '—'}</td>
@@ -793,7 +876,7 @@ async function loadDashboard() {
 
   const tbody = document.getElementById('contracts-table-body');
   if (data.contracts.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="icon">📭</div>אין חוזים עדיין</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="icon">📭</div>אין חוזים עדיין</div></td></tr>';
   } else {
     tbody.innerHTML = data.contracts.map(c => contractRow(c)).join('');
   }
@@ -809,7 +892,7 @@ async function loadContracts() {
 function renderContractsList(list) {
   const tbody = document.getElementById('contracts-list-body');
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="icon">📭</div>אין חוזים</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="icon">📭</div>אין חוזים</div></td></tr>';
   } else {
     tbody.innerHTML = list.map(c => contractRow(c)).join('');
   }
@@ -830,6 +913,8 @@ async function editContract(id) {
   document.getElementById('edit-id').value = c.id;
   document.getElementById('f-tenant').value = c.tenant_name || '';
   document.getElementById('f-property').value = c.property || '';
+  document.getElementById('f-propnum').value = c.property_number || '';
+  document.getElementById('f-sqm').value = c.size_sqm || '';
   document.getElementById('f-start').value = c.start_date || '';
   document.getElementById('f-end').value = c.end_date || '';
   document.getElementById('f-rent').value = c.monthly_rent || '';
@@ -842,6 +927,8 @@ async function saveContract() {
   const payload = {
     tenant_name: document.getElementById('f-tenant').value,
     property: document.getElementById('f-property').value,
+    property_number: document.getElementById('f-propnum').value || null,
+    size_sqm: parseFloat(document.getElementById('f-sqm').value) || null,
     start_date: document.getElementById('f-start').value,
     end_date: document.getElementById('f-end').value,
     monthly_rent: parseFloat(document.getElementById('f-rent').value) || null,
@@ -859,7 +946,7 @@ async function saveContract() {
 
 function clearForm() {
   document.getElementById('edit-id').value = '';
-  ['f-tenant','f-property','f-start','f-end','f-rent'].forEach(id => document.getElementById(id).value = '');
+  ['f-tenant','f-property','f-propnum','f-sqm','f-start','f-end','f-rent'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-currency').value = 'ILS';
 }
 
@@ -954,6 +1041,7 @@ async function showContractDetail(id, e) {
   if (e) e.stopPropagation();
   currentContractId = id;
   const c = await fetch(API + '/contracts/' + id).then(r => r.json());
+  currentPropertyName = c.property || null;
 
   // Back button label
   document.getElementById('detail-back-btn').textContent = '← חזרה';
@@ -969,6 +1057,8 @@ async function showContractDetail(id, e) {
   document.getElementById('detail-grid').innerHTML = `
     <div class="detail-field"><div class="df-label">שוכר</div><div class="df-value">${c.tenant_name || '—'}</div></div>
     <div class="detail-field"><div class="df-label">נכס / כתובת</div><div class="df-value">${c.property || '—'}</div></div>
+    <div class="detail-field"><div class="df-label">מספר נכס</div><div class="df-value">${c.property_number || '—'}</div></div>
+    <div class="detail-field"><div class="df-label">גודל</div><div class="df-value">${c.size_sqm ? c.size_sqm + ' מ"ר' : '—'}</div></div>
     <div class="detail-field"><div class="df-label">תחילת שכירות</div><div class="df-value">${fmtDate(c.start_date)}</div></div>
     <div class="detail-field"><div class="df-label">סיום שכירות</div><div class="df-value">${fmtDate(c.end_date)}</div></div>
     <div class="detail-field"><div class="df-label">ימים לסיום</div><div class="df-value">${daysStr}</div></div>
@@ -1003,8 +1093,9 @@ function showDetailTab(name) {
   document.querySelectorAll('#page-contract .sub-tab').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('#page-contract .sub-page').forEach(p => p.classList.remove('active'));
   document.getElementById('detail-sub-' + name).classList.add('active');
-  const idx = ['payments','events'].indexOf(name);
+  const idx = ['payments','events','images'].indexOf(name);
   document.querySelectorAll('#page-contract .sub-tab')[idx].classList.add('active');
+  if (name === 'images') loadPropertyImages();
 }
 
 async function loadDetailPayments() {
@@ -1380,6 +1471,81 @@ async function deleteEvent(id) {
   if (!confirm('למחוק אירוע זה?')) return;
   await fetch(API + '/events/' + id, { method: 'DELETE' });
   loadEvents();
+}
+
+// ─── Property Images ──────────────────────────────────────────────────────
+
+const IMG_CATEGORIES = [
+  { key: 'mailbox',     label: '📬 תיבת דואר' },
+  { key: 'water',       label: '💧 שעון מים' },
+  { key: 'electricity', label: '⚡ מונה חשמל' },
+  { key: 'parking',     label: '🅿️ מספר חניה' },
+  { key: 'general',     label: '🏠 כללי' },
+];
+
+let currentPropertyName = null;
+
+async function loadPropertyImages() {
+  if (!currentPropertyName) return;
+  const images = await fetch(API + '/properties/' + encodeURIComponent(currentPropertyName) + '/images').then(r => r.json());
+  const byCategory = {};
+  IMG_CATEGORIES.forEach(c => byCategory[c.key] = []);
+  images.forEach(img => { if (byCategory[img.category]) byCategory[img.category].push(img); });
+
+  const html = IMG_CATEGORIES.map(cat => `
+    <div class="img-category-card">
+      <h4>${cat.label}</h4>
+      <div class="img-thumbs" id="thumbs-${cat.key}">
+        ${byCategory[cat.key].map(img => `
+          <div class="img-thumb-wrap">
+            <img src="${img.image_url}" onclick="window.open('${img.image_url}','_blank')" title="לחץ להגדלה">
+            <button class="img-del-btn" onclick="deletePropertyImage(${img.id})" title="מחק">✕</button>
+          </div>
+        `).join('')}
+      </div>
+      <label class="img-upload-label">
+        + הוסף תמונה
+        <input type="file" accept="image/*" style="display:none" onchange="uploadPropertyImage(this, '${cat.key}')">
+      </label>
+    </div>
+  `).join('');
+
+  document.getElementById('property-images-gallery').innerHTML = `<div class="img-gallery">${html}</div>`;
+}
+
+async function resizeImage(file) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * 0.8);
+      canvas.height = Math.round(img.height * 0.8);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob => resolve(new File([blob], file.name, { type: 'image/jpeg' })), 'image/jpeg', 0.85);
+    };
+    img.src = url;
+  });
+}
+
+async function uploadPropertyImage(input, category) {
+  const file = input.files[0];
+  if (!file || !currentPropertyName) return;
+  input.disabled = true;
+  const resized = await resizeImage(file);
+  const formData = new FormData();
+  formData.append('image', resized);
+  formData.append('category', category);
+  const res = await fetch(API + '/properties/' + encodeURIComponent(currentPropertyName) + '/images', { method: 'POST', body: formData });
+  if (!res.ok) { alert('שגיאה בהעלאה'); input.disabled = false; return; }
+  loadPropertyImages();
+}
+
+async function deletePropertyImage(id) {
+  if (!confirm('למחוק תמונה זו?')) return;
+  await fetch(API + '/images/' + id, { method: 'DELETE' });
+  loadPropertyImages();
 }
 
 // Init

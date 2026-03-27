@@ -5,7 +5,10 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
+const { createClient } = require('@supabase/supabase-js');
 const db = require('./database');
+
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +29,9 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage });
+
+// Multer for image uploads (memory storage → Supabase)
+const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 // ─── PDF Parsing helpers ────────────────────────────────────────────────────
 
@@ -110,19 +116,29 @@ async function parsePdf(filePath) {
 
 // GET all contracts
 app.get('/api/contracts', (req, res) => {
-  db.all('SELECT * FROM contracts ORDER BY end_date ASC', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+  db.all(
+    `SELECT c.*, p.property_number, p.size_sqm
+     FROM contracts c
+     LEFT JOIN properties p ON p.name = c.property
+     ORDER BY c.end_date ASC`,
+    [], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    });
 });
 
 // GET single contract
 app.get('/api/contracts/:id', (req, res) => {
-  db.get('SELECT * FROM contracts WHERE id = ?', [req.params.id], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!row) return res.status(404).json({ error: 'Not found' });
-    res.json(row);
-  });
+  db.get(
+    `SELECT c.*, p.property_number, p.size_sqm
+     FROM contracts c
+     LEFT JOIN properties p ON p.name = c.property
+     WHERE c.id = ?`,
+    [req.params.id], (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!row) return res.status(404).json({ error: 'Not found' });
+      res.json(row);
+    });
 });
 
 // GET contract PDF file
@@ -137,30 +153,43 @@ app.get('/api/contracts/:id/pdf', (req, res) => {
   });
 });
 
-// POST create/update contract
+function upsertProperty(name, property_number, size_sqm, cb) {
+  if (!name) return cb();
+  db.run(`INSERT INTO properties (name) VALUES (?)`, [name], () => {
+    const sets = [], vals = [];
+    if (property_number !== undefined) { sets.push('property_number=?'); vals.push(property_number || null); }
+    if (size_sqm !== undefined) { sets.push('size_sqm=?'); vals.push(size_sqm ? parseFloat(size_sqm) : null); }
+    if (sets.length === 0) return cb();
+    vals.push(name);
+    db.run(`UPDATE properties SET ${sets.join(',')} WHERE name=?`, vals, cb);
+  });
+}
+
+// POST create contract
 app.post('/api/contracts', (req, res) => {
-  const { tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path } = req.body;
+  const { tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, property_number, size_sqm } = req.body;
   db.run(
     `INSERT INTO contracts (tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [tenant_name, property, start_date, end_date, monthly_rent, currency || 'ILS', pdf_path || null],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
+      const id = this.lastID;
+      upsertProperty(property, property_number, size_sqm, () => res.json({ id }));
     }
   );
 });
 
 // PUT update contract
 app.put('/api/contracts/:id', (req, res) => {
-  const { tenant_name, property, start_date, end_date, monthly_rent, currency } = req.body;
+  const { tenant_name, property, start_date, end_date, monthly_rent, currency, property_number, size_sqm } = req.body;
   db.run(
     `UPDATE contracts SET tenant_name=?, property=?, start_date=?, end_date=?, monthly_rent=?, currency=?
      WHERE id=?`,
     [tenant_name, property, start_date, end_date, monthly_rent, currency || 'ILS', req.params.id],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
-      res.json({ changes: this.changes });
+      upsertProperty(property, property_number, size_sqm, () => res.json({ changes: this.changes }));
     }
   );
 });
@@ -254,7 +283,7 @@ app.get('/api/dashboard', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const in60days = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  db.all('SELECT * FROM contracts', [], (err, contracts) => {
+  db.all(`SELECT c.*, p.property_number, p.size_sqm FROM contracts c LEFT JOIN properties p ON p.name = c.property`, [], (err, contracts) => {
     if (err) return res.status(500).json({ error: err.message });
 
     const active = contracts.filter(c => c.end_date >= today);
@@ -393,6 +422,56 @@ app.delete('/api/events/:id', (req, res) => {
   db.run('DELETE FROM events WHERE id=?', [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ changes: this.changes });
+  });
+});
+
+// ─── Property Images ────────────────────────────────────────────────────────
+
+app.get('/api/properties/:name/images', (req, res) => {
+  const name = decodeURIComponent(req.params.name);
+  db.all('SELECT * FROM property_images WHERE property_name=? ORDER BY category, created_at', [name], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+app.post('/api/properties/:name/images', imageUpload.single('image'), async (req, res) => {
+  const propertyName = decodeURIComponent(req.params.name);
+  const { category } = req.body;
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+
+  const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
+  const storagePath = `${propertyName}/${category}/${Date.now()}.${ext}`;
+
+  const { error: upErr } = await supabase.storage
+    .from('property-images')
+    .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
+
+  if (upErr) return res.status(500).json({ error: upErr.message });
+
+  const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(storagePath);
+
+  db.run(`INSERT INTO properties (name) VALUES (?)`, [propertyName], () => {
+    db.run(
+      'INSERT INTO property_images (property_name, category, image_url) VALUES (?,?,?)',
+      [propertyName, category, urlData.publicUrl],
+      function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ id: this.lastID, image_url: urlData.publicUrl });
+      }
+    );
+  });
+});
+
+app.delete('/api/images/:id', async (req, res) => {
+  db.get('SELECT * FROM property_images WHERE id=?', [req.params.id], async (err, row) => {
+    if (err || !row) return res.status(404).json({ error: 'Not found' });
+    const match = row.image_url.split('/storage/v1/object/public/property-images/')[1];
+    if (match) await supabase.storage.from('property-images').remove([decodeURIComponent(match)]);
+    db.run('DELETE FROM property_images WHERE id=?', [req.params.id], function(e) {
+      if (e) return res.status(500).json({ error: e.message });
+      res.json({ ok: true });
+    });
   });
 });
 
