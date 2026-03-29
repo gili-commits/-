@@ -441,7 +441,8 @@ app.post('/api/properties/:name/images', imageUpload.single('image'), async (req
   if (!req.file) return res.status(400).json({ error: 'No file' });
 
   const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
-  const storagePath = `${propertyName}/${category}/${Date.now()}.${ext}`;
+  const safePropertyName = encodeURIComponent(propertyName).replace(/%/g, '_');
+  const storagePath = `${safePropertyName}/${category}/${Date.now()}.${ext}`;
 
   const { error: upErr } = await supabase.storage
     .from('property-images')
