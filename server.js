@@ -460,14 +460,15 @@ app.post('/api/properties/:name/images', imageUpload.single('image'), async (req
   const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(storagePath);
 
   const fileType = req.file.mimetype === 'application/pdf' ? 'pdf' : 'image';
+  const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
 
   db.run(`INSERT INTO properties (name) VALUES (?)`, [propertyName], () => {
     db.run(
-      'INSERT INTO property_images (property_name, category, image_url, file_type) VALUES (?,?,?,?)',
-      [propertyName, category, urlData.publicUrl, fileType],
+      'INSERT INTO property_images (property_name, category, image_url, file_type, file_name) VALUES (?,?,?,?,?)',
+      [propertyName, category, urlData.publicUrl, fileType, originalName],
       function(err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, image_url: urlData.publicUrl, file_type: fileType });
+        res.json({ id: this.lastID, image_url: urlData.publicUrl, file_type: fileType, file_name: originalName });
       }
     );
   });
