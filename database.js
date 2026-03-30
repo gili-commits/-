@@ -66,6 +66,7 @@ async function initializeDatabase() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE property_images ADD COLUMN IF NOT EXISTS file_type TEXT DEFAULT 'image'`);
     console.log('Database tables initialized successfully');
   } catch (err) {
     console.error('Error initializing database:', err.message);

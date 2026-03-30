@@ -30,8 +30,15 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Multer for image uploads (memory storage → Supabase)
-const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+// Multer for image/PDF uploads (memory storage → Supabase)
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg','image/png','image/gif','image/webp','application/pdf'];
+    cb(null, allowed.includes(file.mimetype));
+  }
+});
 
 // ─── PDF Parsing helpers ────────────────────────────────────────────────────
 
@@ -452,13 +459,15 @@ app.post('/api/properties/:name/images', imageUpload.single('image'), async (req
 
   const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(storagePath);
 
+  const fileType = req.file.mimetype === 'application/pdf' ? 'pdf' : 'image';
+
   db.run(`INSERT INTO properties (name) VALUES (?)`, [propertyName], () => {
     db.run(
-      'INSERT INTO property_images (property_name, category, image_url) VALUES (?,?,?)',
-      [propertyName, category, urlData.publicUrl],
+      'INSERT INTO property_images (property_name, category, image_url, file_type) VALUES (?,?,?,?)',
+      [propertyName, category, urlData.publicUrl, fileType],
       function(err) {
         if (err) return res.status(500).json({ error: err.message });
-        res.json({ id: this.lastID, image_url: urlData.publicUrl });
+        res.json({ id: this.lastID, image_url: urlData.publicUrl, file_type: fileType });
       }
     );
   });

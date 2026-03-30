@@ -417,6 +417,18 @@
       margin-top: 6px;
     }
     .img-upload-label:hover { border-color: #e94560; color: #e94560; }
+    .img-upload-btns { display: flex; gap: 6px; margin-top: 6px; }
+    .img-upload-btns .img-upload-label { flex: 1; margin-top: 0; }
+    .pdf-upload-label { border-color: #4a90e2; color: #4a90e2; }
+    .pdf-upload-label:hover { border-color: #2270c9; color: #2270c9; }
+    .pdf-thumb {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 100%; height: 150px; background: #1a2236; border-radius: 6px;
+      text-decoration: none; color: #4a90e2; border: 2px dashed #4a90e2;
+    }
+    .pdf-thumb:hover { background: #1e2d4a; }
+    .pdf-icon { font-size: 40px; }
+    .pdf-label { font-size: 13px; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -1496,17 +1508,30 @@ async function loadPropertyImages() {
     <div class="img-category-card">
       <h4>${cat.label}</h4>
       <div class="img-thumbs" id="thumbs-${cat.key}">
-        ${byCategory[cat.key].map(img => `
+        ${byCategory[cat.key].map(file => `
           <div class="img-thumb-wrap">
-            <img src="${img.image_url}" onclick="window.open('${img.image_url}','_blank')" title="לחץ להגדלה">
-            <button class="img-del-btn" onclick="deletePropertyImage(${img.id})" title="מחק">✕</button>
+            ${file.file_type === 'pdf' ? `
+              <a href="${file.image_url}" target="_blank" class="pdf-thumb" title="פתח PDF">
+                <span class="pdf-icon">📄</span>
+                <span class="pdf-label">PDF</span>
+              </a>
+            ` : `
+              <img src="${file.image_url}" onclick="window.open('${file.image_url}','_blank')" title="לחץ להגדלה">
+            `}
+            <button class="img-del-btn" onclick="deletePropertyImage(${file.id})" title="מחק">✕</button>
           </div>
         `).join('')}
       </div>
-      <label class="img-upload-label">
-        + הוסף תמונה
-        <input type="file" accept="image/*" style="display:none" onchange="uploadPropertyImage(this, '${cat.key}')">
-      </label>
+      <div class="img-upload-btns">
+        <label class="img-upload-label">
+          + תמונה
+          <input type="file" accept="image/*" style="display:none" onchange="uploadPropertyImage(this, '${cat.key}')">
+        </label>
+        <label class="img-upload-label pdf-upload-label">
+          + PDF
+          <input type="file" accept="application/pdf" style="display:none" onchange="uploadPropertyImage(this, '${cat.key}')">
+        </label>
+      </div>
     </div>
   `).join('');
 
@@ -1533,9 +1558,9 @@ async function uploadPropertyImage(input, category) {
   const file = input.files[0];
   if (!file || !currentPropertyName) return;
   input.disabled = true;
-  const resized = await resizeImage(file);
+  const fileToUpload = file.type === 'application/pdf' ? file : await resizeImage(file);
   const formData = new FormData();
-  formData.append('image', resized);
+  formData.append('image', fileToUpload);
   formData.append('category', category);
   const res = await fetch(API + '/properties/' + encodeURIComponent(currentPropertyName) + '/images', { method: 'POST', body: formData });
   if (!res.ok) { alert('שגיאה בהעלאה'); input.disabled = false; return; }
