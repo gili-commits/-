@@ -868,7 +868,7 @@ function contractRow(c, forDashboard = false) {
     <td>${c.monthly_rent ? '₪' + fmt(c.monthly_rent) : '—'}</td>
     <td>${statusBadge(c.end_date)}</td>
     <td onclick="event.stopPropagation()">
-      ${c.pdf_path ? `<button class="btn btn-sm" style="background:#8e44ad;color:white" onclick="window.open('${API}/contracts/${c.id}/pdf','_blank')">📄 PDF</button>` : ''}
+      ${c.pdf_path ? `<button class="btn btn-sm" style="background:#8e44ad;color:white" onclick="window.open(${c.pdf_path.startsWith('http') ? `'${c.pdf_path}'` : `'${API}/contracts/${c.id}/pdf'`},'_blank')">📄 PDF</button>` : ''}
       <button class="btn btn-secondary btn-sm" onclick="editContract(${c.id})">ערוך</button>
       <button class="btn btn-danger btn-sm" onclick="deleteContract(${c.id})">מחק</button>
     </td>
@@ -1006,7 +1006,9 @@ async function uploadPdf() {
   renderScanResults([result]);
 }
 
+let scanResultsData = [];
 function renderScanResults(results) {
+  scanResultsData = results;
   const today = new Date().toISOString().split('T')[0];
   const html = results.map((r, i) => `
     <div class="scan-result">
@@ -1022,21 +1024,22 @@ function renderScanResults(results) {
         <input type="date" id="sr-start-${i}" value="${r.start_date || ''}">
         <input type="date" id="sr-end-${i}" value="${r.end_date || ''}">
         <input type="number" placeholder="שכ"ד" id="sr-rent-${i}" value="${r.monthly_rent || ''}" style="width:100px">
-        <button class="btn btn-success btn-sm" onclick="importContract(${i}, '${r.filename}')">ייבא לDB</button>
+        <button class="btn btn-success btn-sm" onclick="importContract(${i})">ייבא לDB</button>
       </div>
     </div>
   `).join('');
   document.getElementById('scan-results').innerHTML = html || '<div class="empty">לא נמצאו קבצים</div>';
 }
 
-async function importContract(i, filename) {
+async function importContract(i) {
+  const r = scanResultsData[i];
   const payload = {
     tenant_name: document.getElementById('sr-tenant-'+i).value,
     property: document.getElementById('sr-prop-'+i).value,
     start_date: document.getElementById('sr-start-'+i).value,
     end_date: document.getElementById('sr-end-'+i).value,
     monthly_rent: parseFloat(document.getElementById('sr-rent-'+i).value) || null,
-    pdf_path: filename
+    pdf_path: r.pdf_url || null
   };
   const res = await fetch(API + '/import-contract', {
     method: 'POST',
@@ -1087,8 +1090,10 @@ async function showContractDetail(id, e) {
 
   // PDF button
   const pdfBtn = document.getElementById('detail-pdf-btn');
-  if (c.pdf_path) { pdfBtn.style.display = 'inline-flex'; pdfBtn.onclick = () => window.open(API + '/contracts/' + id + '/pdf', '_blank'); }
-  else pdfBtn.style.display = 'none';
+  if (c.pdf_path) {
+    pdfBtn.style.display = 'inline-flex';
+    pdfBtn.onclick = () => window.open(c.pdf_path.startsWith('http') ? c.pdf_path : API + '/contracts/' + id + '/pdf', '_blank');
+  } else pdfBtn.style.display = 'none';
 
   // Prefill payment defaults
   document.getElementById('dpf-amount').value = c.monthly_rent || '';

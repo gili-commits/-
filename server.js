@@ -17,18 +17,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Multer for PDF uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Buffer.from(file.originalname, 'latin1').toString('utf8'));
+// Multer for PDF uploads (memory storage → Supabase)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    cb(null, file.mimetype === 'application/pdf');
   }
 });
-const upload = multer({ storage });
 
 // Multer for image/PDF uploads (memory storage → Supabase)
 const imageUpload = multer({
@@ -104,8 +100,7 @@ function extractPropertyFromFilename(filename) {
   return name;
 }
 
-async function parsePdf(filePath) {
-  const buffer = fs.readFileSync(filePath);
+async function parsePdf(buffer) {
   let data;
   try {
     data = await pdfParse(buffer);
@@ -153,6 +148,11 @@ app.get('/api/contracts/:id/pdf', (req, res) => {
   db.get('SELECT pdf_path FROM contracts WHERE id = ?', [req.params.id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!row || !row.pdf_path) return res.status(404).send('אין קובץ PDF לחוזה זה');
+    // If pdf_path is a URL (Supabase), redirect to it
+    if (row.pdf_path.startsWith('http')) {
+      return res.redirect(row.pdf_path);
+    }
+    // Legacy: local file
     if (!fs.existsSync(row.pdf_path)) return res.status(404).send('קובץ לא נמצא: ' + row.pdf_path);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline');
@@ -213,11 +213,23 @@ app.delete('/api/contracts/:id', (req, res) => {
 app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const filePath = req.file.path;
-  const filename = req.file.filename;
-
-  const parsed = await parsePdf(filePath);
+  const filename = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+  const parsed = await parsePdf(req.file.buffer);
   const property = extractPropertyFromFilename(filename);
+
+  // Upload to Supabase Storage
+  const safeName = encodeURIComponent(filename.replace(/\.pdf$/i, '')).replace(/%/g, '_');
+  const storagePath = `contracts/${safeName}_${Date.now()}.pdf`;
+
+  const { error: upErr } = await supabase.storage
+    .from('property-images')
+    .upload(storagePath, req.file.buffer, { contentType: 'application/pdf', upsert: false });
+
+  let pdfUrl = null;
+  if (!upErr) {
+    const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(storagePath);
+    pdfUrl = urlData.publicUrl;
+  }
 
   // Auto-detect start/end dates (first = start, last = end)
   const startDate = parsed.dates[0] || null;
@@ -233,7 +245,8 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
     start_date: startDate,
     end_date: endDate,
     monthly_rent: monthlyRent,
-    text_preview: parsed.text.slice(0, 500)
+    text_preview: parsed.text.slice(0, 500),
+    pdf_url: pdfUrl
   });
 });
 
@@ -249,8 +262,23 @@ app.post('/api/scan-folder', async (req, res) => {
 
   for (const file of files) {
     const filePath = path.join(folderPath, file);
-    const parsed = await parsePdf(filePath);
+    const buffer = fs.readFileSync(filePath);
+    const parsed = await parsePdf(buffer);
     const property = extractPropertyFromFilename(file);
+
+    // Upload to Supabase Storage
+    const safeName = encodeURIComponent(file.replace(/\.pdf$/i, '')).replace(/%/g, '_');
+    const storagePath = `contracts/${safeName}_${Date.now()}.pdf`;
+
+    const { error: upErr } = await supabase.storage
+      .from('property-images')
+      .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: false });
+
+    let pdfUrl = null;
+    if (!upErr) {
+      const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(storagePath);
+      pdfUrl = urlData.publicUrl;
+    }
 
     const startDate = parsed.dates[0] || null;
     const endDate = parsed.dates[parsed.dates.length - 1] || null;
@@ -264,7 +292,8 @@ app.post('/api/scan-folder', async (req, res) => {
       amounts: parsed.amounts,
       start_date: startDate,
       end_date: endDate,
-      monthly_rent: monthlyRent
+      monthly_rent: monthlyRent,
+      pdf_url: pdfUrl
     });
   }
 
