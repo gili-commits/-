@@ -767,6 +767,10 @@
           <label>גודל נכס (מ"ר)</label>
           <input type="number" id="f-sqm" placeholder="לדוגמה: 75">
         </div>
+        <div class="form-group">
+          <label>מספר חניות</label>
+          <input type="number" id="f-parking" min="0" placeholder="לדוגמה: 2">
+        </div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -928,6 +932,7 @@ async function editContract(id) {
   document.getElementById('f-property').value = c.property || '';
   document.getElementById('f-propnum').value = c.property_number || '';
   document.getElementById('f-sqm').value = c.size_sqm || '';
+  document.getElementById('f-parking').value = c.parking_count ?? '';
   document.getElementById('f-start').value = c.start_date || '';
   document.getElementById('f-end').value = c.end_date || '';
   document.getElementById('f-rent').value = c.monthly_rent || '';
@@ -942,6 +947,7 @@ async function saveContract() {
     property: document.getElementById('f-property').value,
     property_number: document.getElementById('f-propnum').value || null,
     size_sqm: parseFloat(document.getElementById('f-sqm').value) || null,
+    parking_count: document.getElementById('f-parking').value === '' ? null : parseInt(document.getElementById('f-parking').value, 10),
     start_date: document.getElementById('f-start').value,
     end_date: document.getElementById('f-end').value,
     monthly_rent: parseFloat(document.getElementById('f-rent').value) || null,
@@ -959,7 +965,7 @@ async function saveContract() {
 
 function clearForm() {
   document.getElementById('edit-id').value = '';
-  ['f-tenant','f-property','f-propnum','f-sqm','f-start','f-end','f-rent'].forEach(id => document.getElementById(id).value = '');
+  ['f-tenant','f-property','f-propnum','f-sqm','f-parking','f-start','f-end','f-rent'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-currency').value = 'ILS';
 }
 
@@ -1075,6 +1081,7 @@ async function showContractDetail(id, e) {
     <div class="detail-field"><div class="df-label">נכס / כתובת</div><div class="df-value">${c.property || '—'}</div></div>
     <div class="detail-field"><div class="df-label">מספר נכס</div><div class="df-value">${c.property_number || '—'}</div></div>
     <div class="detail-field"><div class="df-label">גודל</div><div class="df-value">${c.size_sqm ? c.size_sqm + ' מ"ר' : '—'}</div></div>
+    <div class="detail-field"><div class="df-label">מספר חניות</div><div class="df-value">${c.parking_count != null ? c.parking_count : '—'}</div></div>
     <div class="detail-field"><div class="df-label">תחילת שכירות</div><div class="df-value">${fmtDate(c.start_date)}</div></div>
     <div class="detail-field"><div class="df-label">סיום שכירות</div><div class="df-value">${fmtDate(c.end_date)}</div></div>
     <div class="detail-field"><div class="df-label">ימים לסיום</div><div class="df-value">${daysStr}</div></div>

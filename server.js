@@ -119,7 +119,7 @@ async function parsePdf(buffer) {
 // GET all contracts
 app.get('/api/contracts', (req, res) => {
   db.all(
-    `SELECT c.*, p.property_number, p.size_sqm
+    `SELECT c.*, p.property_number, p.size_sqm, p.parking_count
      FROM contracts c
      LEFT JOIN properties p ON p.name = c.property
      ORDER BY c.end_date ASC`,
@@ -132,7 +132,7 @@ app.get('/api/contracts', (req, res) => {
 // GET single contract
 app.get('/api/contracts/:id', (req, res) => {
   db.get(
-    `SELECT c.*, p.property_number, p.size_sqm
+    `SELECT c.*, p.property_number, p.size_sqm, p.parking_count
      FROM contracts c
      LEFT JOIN properties p ON p.name = c.property
      WHERE c.id = ?`,
@@ -160,12 +160,13 @@ app.get('/api/contracts/:id/pdf', (req, res) => {
   });
 });
 
-function upsertProperty(name, property_number, size_sqm, cb) {
+function upsertProperty(name, property_number, size_sqm, parking_count, cb) {
   if (!name) return cb();
   db.run(`INSERT INTO properties (name) VALUES (?)`, [name], () => {
     const sets = [], vals = [];
     if (property_number !== undefined) { sets.push('property_number=?'); vals.push(property_number || null); }
     if (size_sqm !== undefined) { sets.push('size_sqm=?'); vals.push(size_sqm ? parseFloat(size_sqm) : null); }
+    if (parking_count !== undefined) { sets.push('parking_count=?'); vals.push(parking_count !== null && parking_count !== '' ? parseInt(parking_count, 10) : null); }
     if (sets.length === 0) return cb();
     vals.push(name);
     db.run(`UPDATE properties SET ${sets.join(',')} WHERE name=?`, vals, cb);
@@ -174,7 +175,7 @@ function upsertProperty(name, property_number, size_sqm, cb) {
 
 // POST create contract
 app.post('/api/contracts', (req, res) => {
-  const { tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, property_number, size_sqm } = req.body;
+  const { tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, property_number, size_sqm, parking_count } = req.body;
   db.run(
     `INSERT INTO contracts (tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -182,21 +183,21 @@ app.post('/api/contracts', (req, res) => {
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
       const id = this.lastID;
-      upsertProperty(property, property_number, size_sqm, () => res.json({ id }));
+      upsertProperty(property, property_number, size_sqm, parking_count, () => res.json({ id }));
     }
   );
 });
 
 // PUT update contract
 app.put('/api/contracts/:id', (req, res) => {
-  const { tenant_name, property, start_date, end_date, monthly_rent, currency, property_number, size_sqm } = req.body;
+  const { tenant_name, property, start_date, end_date, monthly_rent, currency, property_number, size_sqm, parking_count } = req.body;
   db.run(
     `UPDATE contracts SET tenant_name=?, property=?, start_date=?, end_date=?, monthly_rent=?, currency=?
      WHERE id=?`,
     [tenant_name, property, start_date, end_date, monthly_rent, currency || 'ILS', req.params.id],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
-      upsertProperty(property, property_number, size_sqm, () => res.json({ changes: this.changes }));
+      upsertProperty(property, property_number, size_sqm, parking_count, () => res.json({ changes: this.changes }));
     }
   );
 });
@@ -319,7 +320,7 @@ app.get('/api/dashboard', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const in60days = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  db.all(`SELECT c.*, p.property_number, p.size_sqm FROM contracts c LEFT JOIN properties p ON p.name = c.property`, [], (err, contracts) => {
+  db.all(`SELECT c.*, p.property_number, p.size_sqm, p.parking_count FROM contracts c LEFT JOIN properties p ON p.name = c.property`, [], (err, contracts) => {
     if (err) return res.status(500).json({ error: err.message });
 
     const active = contracts.filter(c => c.end_date >= today);

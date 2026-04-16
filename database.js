@@ -57,6 +57,7 @@ async function initializeDatabase() {
     `);
     await pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS property_number TEXT`);
     await pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS size_sqm REAL`);
+    await pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS parking_count INTEGER`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS property_images (
         id SERIAL PRIMARY KEY,
