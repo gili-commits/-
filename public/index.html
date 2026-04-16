@@ -449,9 +449,8 @@
 
 <nav>
   <button class="active" onclick="showPage('dashboard')">דשבורד</button>
-  <button onclick="showPage('contracts')">חוזים</button>
   <button onclick="showPage('payments')">תשלומים ואירועים</button>
-  <button onclick="showPage('scan')">סריקת PDF</button>
+  <button onclick="showPage('scan')">סריקת חוזה</button>
   <button onclick="showPage('add')">הוסף חוזה</button>
 </nav>
 
@@ -719,27 +718,19 @@
     </div>
   </div>
 
-  <!-- SCAN PDF -->
+  <!-- SCAN CONTRACT -->
   <div id="page-scan" class="page">
-    <div class="form-box">
-      <div class="section-title">📂 סריקת תיקיית חוזים</div>
-      <div class="form-row">
-        <div class="form-group" style="grid-column:1/-1">
-          <label>נתיב לתיקייה</label>
-          <input type="text" id="scan-folder" value="C:\Users\gilin\Desktop\claude\תובל 22\חוזי שכירויות" style="direction:ltr">
-        </div>
-      </div>
-      <button class="btn btn-secondary" onclick="scanFolder()">סרוק תיקייה</button>
+    <div class="form-box" style="text-align:center">
+      <div class="section-title">📂 סריקת חוזה</div>
+      <p style="margin:12px 0 20px; color:#aab; font-size:0.95rem">
+        לחץ על הכפתור כדי לפתוח את תיקיית "מערכת ניהול שכירויות" ב-Google Drive<br>
+        שם תוכל להעלות את החוזה הסרוק ישירות לתיקייה.
+      </p>
+      <button class="btn btn-primary" style="font-size:1.05rem; padding:14px 28px"
+        onclick="window.open('https://drive.google.com/drive/u/0/folders/1m3CzsLxgkLyzMK85nlZZ1GW9EB1SuvWj','_blank')">
+        📁 פתח תיקיית Google Drive
+      </button>
     </div>
-
-    <div class="form-box">
-      <div class="section-title">📄 העלאת קובץ PDF</div>
-      <input type="file" id="pdf-file" accept=".pdf" style="margin-bottom:10px">
-      <br>
-      <button class="btn btn-secondary" onclick="uploadPdf()">נתח PDF</button>
-    </div>
-
-    <div id="scan-results"></div>
   </div>
 
   <!-- ADD CONTRACT -->
@@ -791,9 +782,13 @@
           </select>
         </div>
       </div>
-      <div style="display:flex; gap:10px; margin-top:8px">
+      <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap">
         <button class="btn btn-primary" onclick="saveContract()">שמור חוזה</button>
         <button class="btn btn-secondary" onclick="clearForm()">נקה</button>
+        <button class="btn btn-secondary" style="background:#8e44ad; color:white"
+          onclick="window.open('https://drive.google.com/drive/u/0/folders/1m3CzsLxgkLyzMK85nlZZ1GW9EB1SuvWj','_blank')">
+          📁 פתח תיקיית Google Drive
+        </button>
       </div>
     </div>
   </div>
