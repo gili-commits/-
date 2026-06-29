@@ -559,7 +559,7 @@
         <input type="file" id="rnw-pdf" accept="application/pdf">
       </div>
       <div style="display:flex; gap:8px">
-        <button class="btn btn-primary" onclick="submitRenew()">שמור חוזה מחודש</button>
+        <button class="btn btn-primary" onclick="submitRenew(this)">שמור חוזה מחודש</button>
         <button class="btn btn-secondary" onclick="toggleRenewForm()">ביטול</button>
       </div>
     </div>
@@ -1182,7 +1182,9 @@ function toggleRenewForm() {
   document.getElementById('renew-form').classList.toggle('open');
 }
 
-async function submitRenew() {
+let renewInProgress = false;
+async function submitRenew(btn) {
+  if (renewInProgress) return;
   const start = document.getElementById('rnw-start').value;
   const end = document.getElementById('rnw-end').value;
   if (!start || !end) { alert('נא למלא תאריך תחילה וסיום'); return; }
@@ -1196,13 +1198,23 @@ async function submitRenew() {
   const file = document.getElementById('rnw-pdf').files[0];
   if (file) fd.append('pdf', file);
 
-  const res = await fetch(API + '/contracts/' + currentContractId + '/renew', { method: 'POST', body: fd });
-  const data = await res.json();
-  if (data.id) {
-    alert('✅ החוזה חודש בהצלחה! החוזה הישן נשמר בהיסטוריה.');
-    showContractDetail(data.id);
-  } else {
-    alert('שגיאה: ' + (data.error || JSON.stringify(data)));
+  renewInProgress = true;
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'שומר...'; }
+  try {
+    const res = await fetch(API + '/contracts/' + currentContractId + '/renew', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.id) {
+      alert('✅ החוזה חודש בהצלחה! החוזה הישן נשמר בהיסטוריה.');
+      showContractDetail(data.id);
+    } else {
+      alert('שגיאה: ' + (data.error || JSON.stringify(data)));
+    }
+  } catch (e) {
+    alert('שגיאה: ' + e.message);
+  } finally {
+    renewInProgress = false;
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
 }
 
