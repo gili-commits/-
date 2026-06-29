@@ -532,8 +532,39 @@
     <div class="detail-actions">
       <button class="btn btn-secondary" onclick="editContract(currentContractId)">✏️ ערוך חוזה</button>
       <button class="btn btn-sm" id="detail-pdf-btn" style="display:none; background:#8e44ad;color:white;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:0.85rem;" onclick="openContractPdf()">📄 פתח PDF</button>
+      <button class="btn btn-sm" style="background:#27ae60;color:white;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:0.85rem;" onclick="toggleRenewForm()">🔄 חדש חוזה</button>
       <button class="btn btn-danger" onclick="deleteContractDetail()">🗑️ מחק חוזה</button>
     </div>
+
+    <div class="add-form-inline" id="renew-form">
+      <div class="section-title" style="margin-bottom:10px">🔄 חידוש חוזה — נשמר כחוזה חדש, הישן יישאר בהיסטוריה</div>
+      <div class="form-row" style="grid-template-columns:1fr 1fr; margin-bottom:10px">
+        <div class="form-group"><label>שם שוכר</label><input type="text" id="rnw-tenant"></div>
+        <div class="form-group"><label>נכס / כתובת</label><input type="text" id="rnw-property"></div>
+      </div>
+      <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr; margin-bottom:10px">
+        <div class="form-group"><label>תאריך תחילה</label><input type="date" id="rnw-start"></div>
+        <div class="form-group"><label>תאריך סיום</label><input type="date" id="rnw-end"></div>
+        <div class="form-group"><label>שכר חודשי (₪)</label><input type="number" id="rnw-rent" placeholder="5000"></div>
+        <div class="form-group"><label>מטבע</label>
+          <select id="rnw-currency">
+            <option value="ILS">₪ שקל</option>
+            <option value="USD">$ דולר</option>
+            <option value="EUR">€ יורו</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label>קובץ PDF של החוזה המחודש (אופציונלי)</label>
+        <input type="file" id="rnw-pdf" accept="application/pdf">
+      </div>
+      <div style="display:flex; gap:8px">
+        <button class="btn btn-primary" onclick="submitRenew()">שמור חוזה מחודש</button>
+        <button class="btn btn-secondary" onclick="toggleRenewForm()">ביטול</button>
+      </div>
+    </div>
+
+    <div id="detail-renewal"></div>
 
     <div class="sub-tabs">
       <button class="sub-tab active" onclick="showDetailTab('payments')">💰 תשלומים</button>
@@ -1097,6 +1128,16 @@ async function showContractDetail(id, e) {
     pdfBtn.onclick = () => window.open(c.pdf_path.startsWith('http') ? c.pdf_path : API + '/contracts/' + id + '/pdf', '_blank');
   } else pdfBtn.style.display = 'none';
 
+  // Prefill renewal form (tenant/property carried over, dates/rent fresh)
+  document.getElementById('renew-form').classList.remove('open');
+  document.getElementById('rnw-tenant').value = c.tenant_name || '';
+  document.getElementById('rnw-property').value = c.property || '';
+  document.getElementById('rnw-rent').value = c.monthly_rent || '';
+  document.getElementById('rnw-currency').value = c.currency || 'ILS';
+  document.getElementById('rnw-start').value = '';
+  document.getElementById('rnw-end').value = '';
+  document.getElementById('rnw-pdf').value = '';
+
   // Prefill payment defaults
   document.getElementById('dpf-amount').value = c.monthly_rent || '';
   document.getElementById('dpf-date').value = new Date().toISOString().split('T')[0];
@@ -1106,8 +1147,63 @@ async function showContractDetail(id, e) {
   showDetailTab('payments');
 
   showPage('contract');
+  await loadRenewalHistory(id);
   await loadDetailPayments();
   await loadDetailEvents();
+}
+
+async function loadRenewalHistory(id) {
+  const box = document.getElementById('detail-renewal');
+  const chain = await fetch(API + '/contracts/' + id + '/chain').then(r => r.json());
+  if (!Array.isArray(chain) || chain.length <= 1) { box.innerHTML = ''; return; }
+  const rows = chain.map((c, i) => {
+    const isCurrent = c.id == id;
+    const label = i === 0 ? 'מקורי' : 'חידוש ' + i;
+    const pdf = c.pdf_path
+      ? `<button class="btn btn-sm" style="background:#8e44ad;color:white" onclick="event.stopPropagation();window.open(${c.pdf_path.startsWith('http') ? `'${c.pdf_path}'` : `'${API}/contracts/${c.id}/pdf'`},'_blank')">📄 PDF</button>`
+      : '';
+    return `<tr class="${isCurrent ? 'expiring-soon' : ''}" style="cursor:pointer" onclick="showContractDetail(${c.id}, event)">
+      <td>${label}${isCurrent ? ' • נוכחי' : ''}</td>
+      <td>${fmtDate(c.start_date)} – ${fmtDate(c.end_date)}</td>
+      <td>${c.monthly_rent ? '₪' + fmt(c.monthly_rent) : '—'}</td>
+      <td>${statusBadge(c.end_date)}</td>
+      <td onclick="event.stopPropagation()">${pdf}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="section-title" style="margin:18px 0 8px">🔄 היסטוריית חידושים (${chain.length} חוזים)</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>גרסה</th><th>תקופה</th><th>שכ"ד</th><th>סטטוס</th><th>PDF</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+function toggleRenewForm() {
+  document.getElementById('renew-form').classList.toggle('open');
+}
+
+async function submitRenew() {
+  const start = document.getElementById('rnw-start').value;
+  const end = document.getElementById('rnw-end').value;
+  if (!start || !end) { alert('נא למלא תאריך תחילה וסיום'); return; }
+  const fd = new FormData();
+  fd.append('tenant_name', document.getElementById('rnw-tenant').value);
+  fd.append('property', document.getElementById('rnw-property').value);
+  fd.append('start_date', start);
+  fd.append('end_date', end);
+  fd.append('monthly_rent', document.getElementById('rnw-rent').value || '');
+  fd.append('currency', document.getElementById('rnw-currency').value);
+  const file = document.getElementById('rnw-pdf').files[0];
+  if (file) fd.append('pdf', file);
+
+  const res = await fetch(API + '/contracts/' + currentContractId + '/renew', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.id) {
+    alert('✅ החוזה חודש בהצלחה! החוזה הישן נשמר בהיסטוריה.');
+    showContractDetail(data.id);
+  } else {
+    alert('שגיאה: ' + (data.error || JSON.stringify(data)));
+  }
 }
 
 function openContractPdf() {

@@ -100,6 +100,18 @@ function extractPropertyFromFilename(filename) {
   return name;
 }
 
+async function uploadContractPdf(buffer, originalname) {
+  const filename = Buffer.from(originalname, 'latin1').toString('utf8');
+  const safeName = encodeURIComponent(filename.replace(/\.pdf$/i, '')).replace(/%/g, '_');
+  const storagePath = `contracts/${safeName}_${Date.now()}.pdf`;
+  const { error: upErr } = await supabase.storage
+    .from('property-images')
+    .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: false });
+  if (upErr) return null;
+  const { data: urlData } = supabase.storage.from('property-images').getPublicUrl(storagePath);
+  return urlData.publicUrl;
+}
+
 async function parsePdf(buffer) {
   let data;
   try {
@@ -207,6 +219,69 @@ app.delete('/api/contracts/:id', (req, res) => {
   db.run('DELETE FROM contracts WHERE id = ?', [req.params.id], function(err) {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ changes: this.changes });
+  });
+});
+
+// GET renewal chain for a contract (oldest → newest)
+app.get('/api/contracts/:id/chain', (req, res) => {
+  db.all(
+    `SELECT id, tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, renewed_from_id, created_at
+     FROM contracts`,
+    [], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const byId = new Map(rows.map(r => [Number(r.id), r]));
+      const childOf = new Map();
+      rows.forEach(r => { if (r.renewed_from_id != null) childOf.set(Number(r.renewed_from_id), r); });
+
+      let cur = byId.get(Number(req.params.id));
+      if (!cur) return res.status(404).json({ error: 'חוזה לא נמצא' });
+      // walk back to the root of the chain
+      while (cur.renewed_from_id != null && byId.get(Number(cur.renewed_from_id))) {
+        cur = byId.get(Number(cur.renewed_from_id));
+      }
+      // walk forward through renewals
+      const chain = [];
+      let node = cur;
+      const seen = new Set();
+      while (node && !seen.has(Number(node.id))) {
+        seen.add(Number(node.id));
+        chain.push(node);
+        node = childOf.get(Number(node.id));
+      }
+      res.json(chain);
+    });
+});
+
+// POST renew a contract (creates a new contract linked to the old one, keeps the old)
+app.post('/api/contracts/:id/renew', upload.single('pdf'), async (req, res) => {
+  const oldId = req.params.id;
+  db.get('SELECT * FROM contracts WHERE id = ?', [oldId], async (err, old) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!old) return res.status(404).json({ error: 'חוזה לא נמצא' });
+
+    const { tenant_name, property, start_date, end_date, monthly_rent, currency } = req.body;
+
+    let pdfUrl = null;
+    if (req.file) pdfUrl = await uploadContractPdf(req.file.buffer, req.file.originalname);
+
+    db.run(
+      `INSERT INTO contracts (tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, renewed_from_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        tenant_name || old.tenant_name,
+        property || old.property,
+        start_date || null,
+        end_date || null,
+        monthly_rent ? parseFloat(monthly_rent) : null,
+        currency || old.currency || 'ILS',
+        pdfUrl,
+        oldId
+      ],
+      function(e) {
+        if (e) return res.status(500).json({ error: e.message });
+        res.json({ id: this.lastID, pdf_url: pdfUrl });
+      }
+    );
   });
 });
 
