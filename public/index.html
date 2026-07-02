@@ -870,7 +870,8 @@ function fmtDate(d) {
   const [y,m,day] = d.split('-');
   return `${day}/${m}/${y}`;
 }
-function statusBadge(endDate) {
+function statusBadge(endDate, superseded = false) {
+  if (superseded) return '<span class="badge" style="background:#555;color:#ddd">הוחלף בחידוש</span>';
   if (!endDate) return '<span class="badge">—</span>';
   const today = new Date().toISOString().split('T')[0];
   const in60 = new Date(Date.now() + 60*24*60*60*1000).toISOString().split('T')[0];
@@ -878,7 +879,8 @@ function statusBadge(endDate) {
   if (endDate <= in60) return '<span class="badge soon">מסתיים בקרוב</span>';
   return '<span class="badge active">פעיל</span>';
 }
-function rowClass(endDate) {
+function rowClass(endDate, superseded = false) {
+  if (superseded) return '';
   if (!endDate) return '';
   const today = new Date().toISOString().split('T')[0];
   const in60 = new Date(Date.now() + 60*24*60*60*1000).toISOString().split('T')[0];
@@ -888,7 +890,7 @@ function rowClass(endDate) {
 }
 
 function contractRow(c, forDashboard = false) {
-  return `<tr class="${rowClass(c.end_date)}" style="cursor:pointer" onclick="showContractDetail(${c.id}, event)">
+  return `<tr class="${rowClass(c.end_date, c.superseded)}" style="cursor:pointer; ${c.superseded ? 'opacity:0.55' : ''}" onclick="showContractDetail(${c.id}, event)">
     <td>${c.tenant_name || '—'}</td>
     <td>${c.property || '—'}</td>
     <td>${c.property_number || '—'}</td>
@@ -896,7 +898,7 @@ function contractRow(c, forDashboard = false) {
     <td>${fmtDate(c.start_date)}</td>
     <td>${fmtDate(c.end_date)}</td>
     <td>${c.monthly_rent ? '₪' + fmt(c.monthly_rent) : '—'}</td>
-    <td>${statusBadge(c.end_date)}</td>
+    <td>${statusBadge(c.end_date, c.superseded)}</td>
     <td onclick="event.stopPropagation()">
       ${c.pdf_path ? `<button class="btn btn-sm" style="background:#8e44ad;color:white" onclick="window.open(${c.pdf_path.startsWith('http') ? `'${c.pdf_path}'` : `'${API}/contracts/${c.id}/pdf'`},'_blank')">📄 PDF</button>` : ''}
       <button class="btn btn-secondary btn-sm" onclick="editContract(${c.id})">ערוך</button>
@@ -1156,6 +1158,15 @@ async function loadRenewalHistory(id) {
   const box = document.getElementById('detail-renewal');
   const chain = await fetch(API + '/contracts/' + id + '/chain').then(r => r.json());
   if (!Array.isArray(chain) || chain.length <= 1) { box.innerHTML = ''; return; }
+
+  // If the contract being viewed isn't the last (newest) link in its own chain,
+  // it has been superseded by a renewal — reflect that in the top status badge
+  // instead of showing it as "active", to avoid it being mistaken for a live contract.
+  const isLast = chain[chain.length - 1].id == id;
+  if (!isLast) {
+    document.getElementById('detail-status-badge').innerHTML = statusBadge(null, true);
+  }
+
   const rows = chain.map((c, i) => {
     const isCurrent = c.id == id;
     const label = i === 0 ? 'מקורי' : 'חידוש ' + i;
@@ -1166,7 +1177,7 @@ async function loadRenewalHistory(id) {
       <td>${label}${isCurrent ? ' • נוכחי' : ''}</td>
       <td>${fmtDate(c.start_date)} – ${fmtDate(c.end_date)}</td>
       <td>${c.monthly_rent ? '₪' + fmt(c.monthly_rent) : '—'}</td>
-      <td>${statusBadge(c.end_date)}</td>
+      <td>${statusBadge(c.end_date, !isCurrent)}</td>
       <td onclick="event.stopPropagation()">${pdf}</td>
     </tr>`;
   }).join('');

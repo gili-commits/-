@@ -128,6 +128,15 @@ async function parsePdf(buffer) {
 
 // ─── Routes ────────────────────────────────────────────────────────────────
 
+// Marks contracts that have been renewed (i.e. a newer contract points back to them
+// via renewed_from_id) as `superseded`, so they're excluded from "active" aggregates.
+function markSuperseded(rows) {
+  const supersededIds = new Set(
+    rows.filter(r => r.renewed_from_id != null).map(r => Number(r.renewed_from_id))
+  );
+  return rows.map(r => ({ ...r, superseded: supersededIds.has(Number(r.id)) }));
+}
+
 // GET all contracts
 app.get('/api/contracts', (req, res) => {
   db.all(
@@ -137,7 +146,7 @@ app.get('/api/contracts', (req, res) => {
      ORDER BY c.end_date ASC`,
     [], (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json(rows);
+      res.json(markSuperseded(rows));
     });
 });
 
@@ -395,12 +404,18 @@ app.get('/api/dashboard', (req, res) => {
   const today = new Date().toISOString().split('T')[0];
   const in60days = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  db.all(`SELECT c.*, p.property_number, p.size_sqm, p.parking_count FROM contracts c LEFT JOIN properties p ON p.name = c.property`, [], (err, contracts) => {
+  db.all(`SELECT c.*, p.property_number, p.size_sqm, p.parking_count FROM contracts c LEFT JOIN properties p ON p.name = c.property`, [], (err, rawContracts) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    const active = contracts.filter(c => c.end_date >= today);
-    const expired = contracts.filter(c => c.end_date && c.end_date < today);
-    const expiringSoon = contracts.filter(c => c.end_date >= today && c.end_date <= in60days);
+    const contracts = markSuperseded(rawContracts);
+    // Superseded contracts (renewed early, before their own end_date) must not
+    // count toward active/income stats — only the current (latest) contract in
+    // each renewal chain should be counted, otherwise rent gets double-counted.
+    const current = contracts.filter(c => !c.superseded);
+
+    const active = current.filter(c => c.end_date >= today);
+    const expired = current.filter(c => c.end_date && c.end_date < today);
+    const expiringSoon = current.filter(c => c.end_date >= today && c.end_date <= in60days);
     const monthlyIncome = active.reduce((sum, c) => sum + (c.monthly_rent || 0), 0);
 
     res.json({
