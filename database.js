@@ -56,6 +56,7 @@ async function initializeDatabase() {
       )
     `);
     await pool.query(`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS renewed_from_id INTEGER`);
+    await pool.query(`ALTER TABLE contracts ADD COLUMN IF NOT EXISTS shared_with_partner INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS property_number TEXT`);
     await pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS size_sqm REAL`);
     await pool.query(`ALTER TABLE properties ADD COLUMN IF NOT EXISTS parking_count INTEGER`);

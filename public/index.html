@@ -558,6 +558,10 @@
         <label>קובץ PDF של החוזה המחודש (אופציונלי)</label>
         <input type="file" id="rnw-pdf" accept="application/pdf">
       </div>
+      <div class="form-group" style="display:flex; align-items:center; gap:8px; margin-bottom:10px">
+        <input type="checkbox" id="rnw-shared" style="width:auto">
+        <label for="rnw-shared" style="margin:0">משותף עם דודה (חודש כן חודש לא — נחשב מחצית בהכנסה)</label>
+      </div>
       <div style="display:flex; gap:8px">
         <button class="btn btn-primary" onclick="submitRenew(this)">שמור חוזה מחודש</button>
         <button class="btn btn-secondary" onclick="toggleRenewForm()">ביטול</button>
@@ -817,6 +821,12 @@
           </select>
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-group" style="display:flex; align-items:center; gap:8px">
+          <input type="checkbox" id="f-shared" style="width:auto">
+          <label for="f-shared" style="margin:0">משותף עם דודה (חודש כן חודש לא — נחשב מחצית בהכנסה)</label>
+        </div>
+      </div>
       <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap">
         <button class="btn btn-primary" onclick="saveContract()">שמור חוזה</button>
         <button class="btn btn-secondary" onclick="clearForm()">נקה</button>
@@ -897,7 +907,7 @@ function contractRow(c, forDashboard = false) {
     <td>${c.size_sqm ? c.size_sqm + ' מ"ר' : '—'}</td>
     <td>${fmtDate(c.start_date)}</td>
     <td>${fmtDate(c.end_date)}</td>
-    <td>${c.monthly_rent ? '₪' + fmt(c.monthly_rent) : '—'}</td>
+    <td>${c.monthly_rent ? '₪' + fmt(c.monthly_rent) : '—'}${c.shared_with_partner ? ' <span title="משותף עם דודה — נחשב מחצית" style="font-size:0.8em;color:#e9a03a">👥½</span>' : ''}</td>
     <td>${statusBadge(c.end_date, c.superseded)}</td>
     <td onclick="event.stopPropagation()">
       ${c.pdf_path ? `<button class="btn btn-sm" style="background:#8e44ad;color:white" onclick="window.open(${c.pdf_path.startsWith('http') ? `'${c.pdf_path}'` : `'${API}/contracts/${c.id}/pdf'`},'_blank')">📄 PDF</button>` : ''}
@@ -970,6 +980,7 @@ async function editContract(id) {
   document.getElementById('f-end').value = c.end_date || '';
   document.getElementById('f-rent').value = c.monthly_rent || '';
   document.getElementById('f-currency').value = c.currency || 'ILS';
+  document.getElementById('f-shared').checked = !!c.shared_with_partner;
   showPage('add');
 }
 
@@ -984,7 +995,8 @@ async function saveContract() {
     start_date: document.getElementById('f-start').value,
     end_date: document.getElementById('f-end').value,
     monthly_rent: parseFloat(document.getElementById('f-rent').value) || null,
-    currency: document.getElementById('f-currency').value
+    currency: document.getElementById('f-currency').value,
+    shared_with_partner: document.getElementById('f-shared').checked
   };
 
   if (id) {
@@ -1000,6 +1012,7 @@ function clearForm() {
   document.getElementById('edit-id').value = '';
   ['f-tenant','f-property','f-propnum','f-sqm','f-parking','f-start','f-end','f-rent'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-currency').value = 'ILS';
+  document.getElementById('f-shared').checked = false;
 }
 
 async function deleteContract(id) {
@@ -1139,6 +1152,7 @@ async function showContractDetail(id, e) {
   document.getElementById('rnw-start').value = '';
   document.getElementById('rnw-end').value = '';
   document.getElementById('rnw-pdf').value = '';
+  document.getElementById('rnw-shared').checked = !!c.shared_with_partner;
 
   // Prefill payment defaults
   document.getElementById('dpf-amount').value = c.monthly_rent || '';
@@ -1206,6 +1220,7 @@ async function submitRenew(btn) {
   fd.append('end_date', end);
   fd.append('monthly_rent', document.getElementById('rnw-rent').value || '');
   fd.append('currency', document.getElementById('rnw-currency').value);
+  fd.append('shared_with_partner', document.getElementById('rnw-shared').checked);
   const file = document.getElementById('rnw-pdf').files[0];
   if (file) fd.append('pdf', file);
 

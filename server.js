@@ -196,11 +196,11 @@ function upsertProperty(name, property_number, size_sqm, parking_count, cb) {
 
 // POST create contract
 app.post('/api/contracts', (req, res) => {
-  const { tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, property_number, size_sqm, parking_count } = req.body;
+  const { tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, property_number, size_sqm, parking_count, shared_with_partner } = req.body;
   db.run(
-    `INSERT INTO contracts (tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [tenant_name, property, start_date, end_date, monthly_rent, currency || 'ILS', pdf_path || null],
+    `INSERT INTO contracts (tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, shared_with_partner)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [tenant_name, property, start_date, end_date, monthly_rent, currency || 'ILS', pdf_path || null, shared_with_partner ? 1 : 0],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
       const id = this.lastID;
@@ -211,11 +211,11 @@ app.post('/api/contracts', (req, res) => {
 
 // PUT update contract
 app.put('/api/contracts/:id', (req, res) => {
-  const { tenant_name, property, start_date, end_date, monthly_rent, currency, property_number, size_sqm, parking_count } = req.body;
+  const { tenant_name, property, start_date, end_date, monthly_rent, currency, property_number, size_sqm, parking_count, shared_with_partner } = req.body;
   db.run(
-    `UPDATE contracts SET tenant_name=?, property=?, start_date=?, end_date=?, monthly_rent=?, currency=?
+    `UPDATE contracts SET tenant_name=?, property=?, start_date=?, end_date=?, monthly_rent=?, currency=?, shared_with_partner=?
      WHERE id=?`,
-    [tenant_name, property, start_date, end_date, monthly_rent, currency || 'ILS', req.params.id],
+    [tenant_name, property, start_date, end_date, monthly_rent, currency || 'ILS', shared_with_partner ? 1 : 0, req.params.id],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
       upsertProperty(property, property_number, size_sqm, parking_count, () => res.json({ changes: this.changes }));
@@ -268,14 +268,14 @@ app.post('/api/contracts/:id/renew', upload.single('pdf'), async (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!old) return res.status(404).json({ error: 'חוזה לא נמצא' });
 
-    const { tenant_name, property, start_date, end_date, monthly_rent, currency } = req.body;
+    const { tenant_name, property, start_date, end_date, monthly_rent, currency, shared_with_partner } = req.body;
 
     let pdfUrl = null;
     if (req.file) pdfUrl = await uploadContractPdf(req.file.buffer, req.file.originalname);
 
     db.run(
-      `INSERT INTO contracts (tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, renewed_from_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO contracts (tenant_name, property, start_date, end_date, monthly_rent, currency, pdf_path, renewed_from_id, shared_with_partner)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tenant_name || old.tenant_name,
         property || old.property,
@@ -284,7 +284,8 @@ app.post('/api/contracts/:id/renew', upload.single('pdf'), async (req, res) => {
         monthly_rent ? parseFloat(monthly_rent) : null,
         currency || old.currency || 'ILS',
         pdfUrl,
-        oldId
+        oldId,
+        shared_with_partner !== undefined ? (shared_with_partner === 'true' || shared_with_partner === true ? 1 : 0) : old.shared_with_partner
       ],
       function(e) {
         if (e) return res.status(500).json({ error: e.message });
@@ -416,7 +417,12 @@ app.get('/api/dashboard', (req, res) => {
     const active = current.filter(c => c.end_date >= today);
     const expired = current.filter(c => c.end_date && c.end_date < today);
     const expiringSoon = current.filter(c => c.end_date >= today && c.end_date <= in60days);
-    const monthlyIncome = active.reduce((sum, c) => sum + (c.monthly_rent || 0), 0);
+    // Contracts marked shared_with_partner alternate months with a partner (e.g. אחות/דודה),
+    // so only half the rent is actually ours on average — count half toward monthly income.
+    const monthlyIncome = active.reduce((sum, c) => {
+      const rent = c.monthly_rent || 0;
+      return sum + (c.shared_with_partner ? rent / 2 : rent);
+    }, 0);
 
     res.json({
       total: contracts.length,
